@@ -1,3 +1,5 @@
+use bin_pack; 
+
 fn main() {
-    println!("Hello, world!");
+    bin_pack::hello(); 
 }
