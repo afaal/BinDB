@@ -1,6 +1,9 @@
-use std::{error::Error, path::{PathBuf}, usize};
+use std::{error::Error, ops::{Deref, DerefMut}, path::{PathBuf}, usize};
 use std::{fs, fs::File, io::{Read, Write}}; 
 use std::os::unix::fs::PermissionsExt;
+
+use memmap::MmapOptions;
+use nix::NixPath;
 #[derive(Copy, Clone)]
 pub struct BinDB <const T: usize>  {
     pub f_offset: usize,
@@ -80,6 +83,23 @@ impl <const T: usize> BinDB<T> {
     }
 
 }
+
+pub fn create_tmp_file(path: &PathBuf) -> Result<memmap::MmapMut, Box<dyn Error>> {
+    // let mut tmp_file = File::create(path)?;
+    let mut tmp_file = std::fs::OpenOptions::new().read(true).write(true).create(true).open(path)?; 
+    tmp_file.write_all(b"aaaaaaaaaaaaaaaaaaaaaaaaaaaaa")?; 
+    let mut mmap = unsafe { MmapOptions::new().map_mut(&tmp_file)? }; 
+    println!("Len: {}", mmap.len());
+    mmap.deref_mut().write_all(b"hello world")?;
+    println!("Len: {}", mmap.len());
+
+    // msync - should ensure writes are done to the MMAPed file
+    // however, this doesn't seem to be working
+    unsafe { nix::sys::mman::msync(mmap.as_mut_ptr() as *mut std::ffi::c_void, mmap.len(), nix::sys::mman::MsFlags::MS_SYNC)?; }
+    
+    Ok(mmap)
+}
+
 
 pub fn recreate_file(path: &PathBuf, data: &[u8]) -> Result<(), Box<dyn Error>> {
     fs::remove_file(&path)?;

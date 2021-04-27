@@ -11,6 +11,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>>{
         DB.content[0] += 1; 
         DB.commit_to_file(&bin_path)?;
     }
+
+
+    let p = std::path::PathBuf::from("./test.tmp"); 
+
+    bindb::create_tmp_file(&p)?; 
     
     Ok(()) 
 }
