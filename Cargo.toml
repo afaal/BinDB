@@ -1,8 +1,11 @@
 [package]
 version = "0.1.0"
-name = "bin_pack"
+name = "bindb"
 authors = ["afaal"]
 edition = "2018"
+
+[dependencies]
+
 
 [dev-dependencies]
 criterion = "0.3"

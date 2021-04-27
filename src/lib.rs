@@ -1,10 +1,10 @@
-use std::{error::Error, path::{Path, PathBuf}, usize};
+use std::{error::Error, path::{PathBuf}, usize};
 use std::{fs, fs::File, io::{Read, Write}}; 
 use std::os::unix::fs::PermissionsExt;
 #[derive(Copy, Clone)]
 pub struct BinDB <const T: usize>  {
     pub f_offset: usize,
-    pub content: [u8; T], 
+    pub content: [u8; T],
 }
 
 // TODO: when deleting a file - the path will become "xxx (deleted)" so upon retriveing the path again, it will no longer be the correct path. 
@@ -47,7 +47,7 @@ impl <const T: usize> BinDB<T> {
             file_dat[f_offset_loc+i] = *dat; 
         }
 
-        // Remove egg 
+        // Remove egg - set all bytes to 0x0
         for i in 0..6 {
             file_dat[self.f_offset+i] = 0x0; 
             self.content[i] = 0x0;
@@ -60,7 +60,7 @@ impl <const T: usize> BinDB<T> {
     }
 
     // Commit database to disk
-    pub fn commit(&mut self, path: &PathBuf) -> Result<(), Box<dyn Error>> {
+    pub fn commit_to_file(&mut self, path: &PathBuf) -> Result<(), Box<dyn Error>> {
         if self.f_offset == 0xEFBEADDE {
             panic!("The DB hasn't been initalized"); 
         }
@@ -78,6 +78,7 @@ impl <const T: usize> BinDB<T> {
 
         Ok(())
     }
+
 }
 
 pub fn recreate_file(path: &PathBuf, data: &[u8]) -> Result<(), Box<dyn Error>> {
