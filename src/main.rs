@@ -1,15 +1,15 @@
 use bin_pack::BinDB;
-use std::io::{self, Write}; 
 
 #[no_mangle]
 static mut DB: BinDB<1024> = BinDB::new();
 
 fn main() -> Result<(), Box<dyn std::error::Error>>{
+    let bin_path = bin_pack::get_bin_location(); 
     unsafe {
-        println!("f_offset = {:x}", DB.f_offset); 
-        println!("content[7] = {}", DB.content[7]);
-        DB.content[7] += 1; 
-        DB.commit()?;
+        DB.init(&bin_path)?; 
+        println!("content[0] = {}", DB.content[0]);
+        DB.content[0] += 1; 
+        DB.commit(&bin_path)?;
     }
     
     Ok(()) 
