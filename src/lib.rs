@@ -1,14 +1,13 @@
-use std::{error::Error, ops::{Deref, DerefMut}, path::{PathBuf}, usize};
+use std::{error::Error, mem, ops::{Deref, DerefMut}, path::{PathBuf}, usize};
 use std::{fs, fs::File, io::{Read, Write}}; 
 use std::os::unix::fs::PermissionsExt;
 use std::ops::{Index, IndexMut};
 
 use memmap::MmapOptions;
-#[derive(Copy, Clone)]
 pub struct BinDB <const T: usize>  {
     pub f_offset: usize,
     pub content: [u8; T],
-    pub file_recreate: bool
+    pub file_recreate: bool,
 }
 
 impl <const T: usize> BinDB<T> {
@@ -27,7 +26,7 @@ impl <const T: usize> BinDB<T> {
         BinDB {
             f_offset: 0xEFBEADDE,
             content,
-            file_recreate: false
+            file_recreate: false,
         }
     }
 
@@ -62,7 +61,7 @@ impl <const T: usize> BinDB<T> {
     }
 
     // Commit database to disk
-    pub fn commit_to_file(&mut self, path: &PathBuf) -> Result<(), Box<dyn Error>> {
+    pub fn commit_to_file(&mut self, path: &PathBuf) -> Result<memmap::MmapMut, Box<dyn Error>> {
         if self.f_offset == 0xEFBEADDE {
             panic!("The DB hasn't been initalized"); 
         }
@@ -76,12 +75,12 @@ impl <const T: usize> BinDB<T> {
         }
 
         // Recreate file and write data to it
-        self.recreate_file(&path, &file_dat)?; 
+        let mmap = self.recreate_file(&path, &file_dat)?; 
         self.file_recreate = true; 
-        Ok(())
+        Ok(mmap)
     }
 
-    pub fn recreate_file(&self, path: &PathBuf, data: &[u8]) -> Result<memmap::MmapMut, Box<dyn Error>> {
+    pub fn recreate_file(&mut self, path: &PathBuf, data: &[u8]) -> Result<memmap::MmapMut, Box<dyn Error>> {
         fs::remove_file(&path)?;
         let mut file = std::fs::OpenOptions::new().read(true).write(true).create(true).open(path)?; 
         let mut perms = file.metadata()?.permissions();
@@ -90,7 +89,7 @@ impl <const T: usize> BinDB<T> {
         // Write data to file, with the same name as the original (now deleted) file.   
         file.write(&data)?;
         file.flush()?;
-
+        self.file_recreate = true;
         mmap_file(&file, self.f_offset as u64, self.content.len())
     }
 }
