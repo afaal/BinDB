@@ -3,7 +3,7 @@ use bindb::BinDB;
 #[no_mangle]
 static mut DB: BinDB<1024> = BinDB::new();
 
-fn main() -> Result<(), Box<dyn std::error::Error>>{
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let bin_path = bindb::get_bin_location(); 
     unsafe {
         DB.init(&bin_path)?; 
@@ -12,10 +12,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>>{
         DB.commit_to_file(&bin_path)?;
     }
 
-
-    let p = std::path::PathBuf::from("./test.tmp"); 
-
-    bindb::create_tmp_file(&p)?; 
+    // ### TEST CODE FOR CREATING MMAPED FILES ### 
+    // let p = std::path::PathBuf::from("./test.tmp"); 
+    // let mut t = bindb::create_mmap_file(&p)?; 
     
+    // t.deref_mut().write_all(b"what is going on here"); 
+    // bindb::mmap_msync(&mut t); 
+
     Ok(()) 
 }

@@ -40,4 +40,4 @@ Problems
 
 Performance gains
 * Have a temporary file along side, and just switch copy/overwrite upon commits, that way we won't have to read, and write to entirely new files. 
-
+* \[NEW\] We don't have to keep a file along side, if we have deleted and recreated the currect processes file, we can simply mmap that, since the process is spawned from a separate file. Thus we don't have to deal with arbitrary file locations.

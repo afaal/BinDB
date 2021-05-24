@@ -1,17 +1,15 @@
 use std::{error::Error, ops::{Deref, DerefMut}, path::{PathBuf}, usize};
 use std::{fs, fs::File, io::{Read, Write}}; 
 use std::os::unix::fs::PermissionsExt;
+use std::ops::{Index, IndexMut};
 
 use memmap::MmapOptions;
-use nix::NixPath;
 #[derive(Copy, Clone)]
 pub struct BinDB <const T: usize>  {
     pub f_offset: usize,
     pub content: [u8; T],
+    pub file_recreate: bool
 }
-
-// TODO: when deleting a file - the path will become "xxx (deleted)" so upon retriveing the path again, it will no longer be the correct path. 
-// We either have to fix the API for retriving the path, or have the path saved throughout the entire lifetime of the program.
 
 impl <const T: usize> BinDB<T> {
 
@@ -28,7 +26,8 @@ impl <const T: usize> BinDB<T> {
         
         BinDB {
             f_offset: 0xEFBEADDE,
-            content
+            content,
+            file_recreate: false
         }
     }
 
@@ -57,7 +56,7 @@ impl <const T: usize> BinDB<T> {
         }
 
         // Write to file
-        recreate_file(&path, &file_dat)?; 
+        self.recreate_file(&path, &file_dat)?; 
 
         Ok(())
     }
@@ -77,27 +76,58 @@ impl <const T: usize> BinDB<T> {
         }
 
         // Recreate file and write data to it
-        recreate_file(&path, &file_dat)?; 
-
+        self.recreate_file(&path, &file_dat)?; 
+        self.file_recreate = true; 
         Ok(())
     }
 
+    pub fn recreate_file(&self, path: &PathBuf, data: &[u8]) -> Result<memmap::MmapMut, Box<dyn Error>> {
+        fs::remove_file(&path)?;
+        let mut file = std::fs::OpenOptions::new().read(true).write(true).create(true).open(path)?; 
+        let mut perms = file.metadata()?.permissions();
+        perms.set_mode(0o770);
+        file.set_permissions(perms)?;
+        // Write data to file, with the same name as the original (now deleted) file.   
+        file.write(&data)?;
+        file.flush()?;
+
+        mmap_file(&file, self.f_offset as u64, self.content.len())
+    }
 }
 
-pub fn create_tmp_file(path: &PathBuf) -> Result<memmap::MmapMut, Box<dyn Error>> {
-    // let mut tmp_file = File::create(path)?;
-    let mut tmp_file = std::fs::OpenOptions::new().read(true).write(true).create(true).open(path)?; 
-    tmp_file.write_all(b"aaaaaaaaaaaaaaaaaaaaaaaaaaaaa")?; 
-    let mut mmap = unsafe { MmapOptions::new().map_mut(&tmp_file)? }; 
-    println!("Len: {}", mmap.len());
-    mmap.deref_mut().write_all(b"hello world")?;
-    println!("Len: {}", mmap.len());
+impl <const T: usize> Index<usize> for BinDB<T> {
+    type Output = u8; 
 
-    // msync - should ensure writes are done to the MMAPed file
-    // however, this doesn't seem to be working
-    unsafe { nix::sys::mman::msync(mmap.as_mut_ptr() as *mut std::ffi::c_void, mmap.len(), nix::sys::mman::MsFlags::MS_SYNC)?; }
-    
+    fn index(&self, index: usize) -> &Self::Output {
+        return &self.content[index]; 
+    }
+}
+
+impl <const T: usize> IndexMut<usize> for BinDB<T> {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        return &mut self.content[index]; 
+    }
+}
+
+
+pub fn create_mmap_file(path: &PathBuf, offset: u64, len:usize) -> Result<memmap::MmapMut, Box<dyn Error>> {
+    // we have to open with read+write because that's what we will try to do when mmaping
+    // otherwise we will trigger an error
+    let mut tmp_file = std::fs::OpenOptions::new().read(true).write(true).create(true).open(path)?; 
+    let mut mmap = unsafe { MmapOptions::new().offset(offset).len(len).map_mut(&tmp_file)? }; 
     Ok(mmap)
+}
+
+pub fn mmap_file(file: &File, offset: u64, len:usize) -> Result<memmap::MmapMut, Box<dyn Error>> {
+    let mut mmap = unsafe { MmapOptions::new().offset(offset).len(len).map_mut(&file)? }; 
+    Ok(mmap)
+}
+
+// [LINUX ONLY]
+// msync - should ensure writes are done to the MMAPed file
+pub fn mmap_msync(mmap: &mut memmap::MmapMut) -> Result<(), Box<dyn Error>> {
+    unsafe { nix::sys::mman::msync(mmap.as_mut_ptr() as *mut std::ffi::c_void, mmap.len(), nix::sys::mman::MsFlags::MS_SYNC)?; }
+    Ok(())
 }
 
 
@@ -107,7 +137,7 @@ pub fn recreate_file(path: &PathBuf, data: &[u8]) -> Result<(), Box<dyn Error>> 
     let mut perms = file.metadata()?.permissions();
     perms.set_mode(0o770);
     file.set_permissions(perms)?;
-    // Write data to file, with the same name as the original (now deleted) file.
+    // Write data to file, with the same name as the original (now deleted) file.   
     file.write(&data)?;
     file.flush()?; 
     Ok(())
