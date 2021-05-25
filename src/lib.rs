@@ -8,6 +8,7 @@ pub struct BinDB <const T: usize>  {
     pub f_offset: usize,
     pub content: [u8; T],
     pub file_recreate: bool,
+    pub mmap: Option<memmap::MmapMut>
 }
 
 impl <const T: usize> BinDB<T> {
@@ -27,14 +28,17 @@ impl <const T: usize> BinDB<T> {
             f_offset: 0xEFBEADDE,
             content,
             file_recreate: false,
+            mmap: None
         }
     }
 
-    pub fn init(&mut self, path: &PathBuf) -> Result<(), Box<dyn Error>> {
+    pub fn init(&mut self) -> Result<&mut BinDB<T>, Box<dyn Error>> {
         // We call init all the times. So we also need to check whether this has been called before.
         if self.f_offset != 0xEFBEADDE {
-            return Ok(()); 
+            return Ok(self); 
         }
+
+        let path = get_bin_location(); 
 
         let egg = [0xde,0xad,0x13,0x33,0x37,0xbe,0xef];
         let mut file_dat = read_file(&path.to_owned().to_str().unwrap())?;
@@ -42,7 +46,7 @@ impl <const T: usize> BinDB<T> {
         self.f_offset = find_location(&file_dat, &egg)?;
 
         // Update the f_offset storing the content location in the binary 
-        let f_offset_loc = self.f_offset-0x8;
+        let f_offset_loc = self.f_offset-0x20;
         let offset_slice = self.f_offset.to_le_bytes(); 
         for (i, dat) in offset_slice.iter().enumerate() {
             file_dat[f_offset_loc+i] = *dat; 
@@ -55,13 +59,28 @@ impl <const T: usize> BinDB<T> {
         }
 
         // Write to file
-        self.recreate_file(&path, &file_dat)?; 
+        let mut mmap = self.recreate_file(&path, &file_dat)?; 
+        self.file_recreate = true; 
+        self.mmap = Some(mmap); 
 
+        Ok(self)
+    }
+
+    pub fn writeable(&mut self) -> Result<(), Box<dyn Error>> {
+        self.commit_to_file()?; 
         Ok(())
     }
 
     // Commit database to disk
-    pub fn commit_to_file(&mut self, path: &PathBuf) -> Result<memmap::MmapMut, Box<dyn Error>> {
+    pub fn commit_to_file(&mut self) -> Result<(), Box<dyn Error>> {
+        
+        // The file has already been recreated and a mmap mapping exists. No reason to recreate the file again
+        if self.file_recreate {
+            return Ok(())
+        }
+
+        let path = get_bin_location(); 
+
         if self.f_offset == 0xEFBEADDE {
             panic!("The DB hasn't been initalized"); 
         }
@@ -77,7 +96,9 @@ impl <const T: usize> BinDB<T> {
         // Recreate file and write data to it
         let mmap = self.recreate_file(&path, &file_dat)?; 
         self.file_recreate = true; 
-        Ok(mmap)
+        self.mmap = Some(mmap); 
+
+        Ok(())
     }
 
     pub fn recreate_file(&mut self, path: &PathBuf, data: &[u8]) -> Result<memmap::MmapMut, Box<dyn Error>> {
@@ -98,13 +119,23 @@ impl <const T: usize> Index<usize> for BinDB<T> {
     type Output = u8; 
 
     fn index(&self, index: usize) -> &Self::Output {
-        return &self.content[index]; 
+        if let Some(mmap) = &self.mmap {
+            return &mmap[index]; 
+        } else {
+            return &self.content[index]; 
+        } 
     }
 }
 
 impl <const T: usize> IndexMut<usize> for BinDB<T> {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        return &mut self.content[index]; 
+        
+        if let Some(mmap) = &mut self.mmap {
+            return &mut mmap[index]; 
+        } else {
+            return &mut self.content[index]; 
+        }
+
     }
 }
 
